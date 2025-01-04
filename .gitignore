@@ -1,1 +1,3 @@
-test_scraper.ipynb
+venv/
+*.png
+*.csv
