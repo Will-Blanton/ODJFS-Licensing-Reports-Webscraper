@@ -9,8 +9,13 @@ import cv2
 import numpy as np
 from PIL import Image
 
-MIN_FIELD_WIDTH = 250
-MIN_FIELD_HEIGHT = 10
+# 500 dpi
+# MIN_FIELD_WIDTH = 250
+# MIN_FIELD_HEIGHT = 10
+
+# 300 dpi
+MIN_FIELD_WIDTH = 150
+MIN_FIELD_HEIGHT = 6
 
 
 def display_opencv_image(image):
@@ -123,10 +128,11 @@ def extract_text_from_subrectangles(ocr, image, sub_rectangles, verbose=False):
             fields += 1
             continue
 
-        results = ocr.readtext(sub_image)
+        results = ocr.readtext(sub_image, batch_size=25)
 
         # try to preprocess the image to improve OCR performance (a bit arbitrary as of now)
-        if not results or any([conf < .7 for _, _, conf in results]):
+        # if not results or any([conf < .7 for _, _, conf in results]):
+        if not results:
             sub_image = cv2.GaussianBlur(sub_image, (5, 5), 0)
             sub_image = cv2.morphologyEx(sub_image, cv2.MORPH_CLOSE, (5, 5), iterations=2)
             sub_image = cv2.resize(sub_image, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
