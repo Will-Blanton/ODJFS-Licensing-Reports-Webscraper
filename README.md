@@ -1,0 +1,62 @@
+# Summary
+
+# Rules
+
+Collected from the first two PDFs
+
+- **Missing 01**
+- 5101:2-12-02 License Posted
+- 5101:2-12-02 Current Information
+- 5101:2-12-03 Inspection Requirements
+- 5101:2-12-04 Building Department Inspection
+- 5101:2-12-04 Fire Inspection
+- 5101:2-12-04 Food Service Requirements
+- **Missing 05**
+- **Missing 06**
+- 5101:2-12-07 Administrator Qualifications
+- 5101:2-12-07 Administrator Responsibilities/Requirements
+- 5101:2-12-07 Written Program Policies and Procedures
+- 5101:2-12-08 Medical Statement
+- 5101:2-12-08 Orientation Training & Whistle Blower Protection
+- 5101:2-12-08 Child Care Staff Member Educational Requirements
+- 5101:2-12-09 Background Check Requirements
+- 5101:2-12-10 Professional Development Requirements
+- 5101:2-12-10 Health Training Requirements
+- 5101:2-12-11 Indoor Space Requirements
+- 5101:2-12-11 Outdoor Space Requirements
+- 5101:2-12-11 Outdoor Play Equipment
+- 5101:2-12-11 Separation of Children Under 2 1/2 Years
+- 5101:2-12-11 Outdoor Play Fall Zones
+- 5101:2-12-12 Safe Equipment
+- 5101:2-12-12 Safe Environment
+- 5101:2-12-13 Sanitary Equipment and Environment
+- 5101:2-12-13 Handwashing Requirements
+- 5101:2-12-13 Smoke Free Environment
+- **Missing 14**
+- 5101:2-12-15 Medical/Physical Care Plans
+- 5101:2-12-15 Child Medical and Enrollment Records
+- 5101:2-12-16 Written Disaster Plan
+- 5101:2-12-16 Medical, Dental, and General Emergency Plan
+- 5101:2-12-16 Emergency Drills
+- 5101:2-12-16 First Aid/Standard Precautions
+- 5101:2-12-16 Management of Communicable Disease
+- 5101:2-12-16 Incident/Injury Reporting
+- 5101:2-12-17 Daily Schedule
+- 5101:2-12-17 Materials and Equipment
+- 5101:2-12-17 Daily Outdoor Play
+- 5101:2-12-18 License Capacity
+- 5101:2-12-18 Attendance Records
+- 5101:2-12-18 Ratio
+- 5101:2-12-18 Group Size
+- 5101:2-12-19 Supervision
+- 5101:2-12-19 Child Guidance
+- 5101:2-12-20 Cots and Napping
+- **Missing 21**
+- 5101:2-12-22 Meal and Snack Requirements
+- 5101:2-12-22 Fluid Milk Requirements
+- 5101:2-12-22 Safe Food Handling/Storage
+- 5101:2-12-23 Infant Daily Care
+- 5101:2-12-23 Infant Bottle and Food Preparation
+- 5101:2-12-23 Diapering and Toilet Training
+- **Missing 24**
+- 5101:2-12-25 Medication Administration
