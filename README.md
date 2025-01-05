@@ -32,7 +32,7 @@ Collected from the first two PDFs
 - 5101:2-12-13 Sanitary Equipment and Environment
 - 5101:2-12-13 Handwashing Requirements
 - 5101:2-12-13 Smoke Free Environment
-- **Missing 14**
+- 5101:2-12-14 Transportation and Field Trip Procedures
 - 5101:2-12-15 Medical/Physical Care Plans
 - 5101:2-12-15 Child Medical and Enrollment Records
 - 5101:2-12-16 Written Disaster Plan
@@ -52,12 +52,12 @@ Collected from the first two PDFs
 - 5101:2-12-19 Child Guidance
 - 5101:2-12-20 Cots and Napping
 - 5101:2-12-20 Cribs
-- **Missing 21**
+- 5101:2-12-21 Evening and Overnight Care
 - 5101:2-12-22 Meal and Snack Requirements
 - 5101:2-12-22 Fluid Milk Requirements
 - 5101:2-12-22 Safe Food Handling/Storage
 - 5101:2-12-23 Infant Daily Care
 - 5101:2-12-23 Infant Bottle and Food Preparation
 - 5101:2-12-23 Diapering and Toilet Training
-- **Missing 24**
+- 5101:2-12-24 Swimming and Water Safety Requirements
 - 5101:2-12-25 Medication Administration
