@@ -12,10 +12,13 @@ from PIL import Image
 # 500 dpi
 # MIN_FIELD_WIDTH = 250
 # MIN_FIELD_HEIGHT = 10
+# KERNEL = (5, 5)
 
 # 300 dpi
 MIN_FIELD_WIDTH = 150
 MIN_FIELD_HEIGHT = 6
+KERNEL = (3, 3)
+
 
 
 def display_opencv_image(image):
@@ -39,7 +42,7 @@ def preprocess_image(image, display=False):
 
     image = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    blur = cv2.GaussianBlur(gray, (5, 5), 0)
+    blur = cv2.GaussianBlur(gray, KERNEL, 0)
     _, thresh = cv2.threshold(blur, 180, 255, cv2.THRESH_BINARY_INV)
     processed = thresh
 
@@ -95,16 +98,20 @@ def get_field_rectangles(image, display=None, verbose=False):
     return sub_rectangles
 
 
-def extract_text_from_subrectangles(ocr, image, sub_rectangles, verbose=False):
+def extract_text_from_subrectangles(ocr, image, sub_rectangles, ocr_kwargs=None, verbose=False):
     """
     Extract text from sub-rectangles of an image using EasyOCR.
 
     :param ocr: (easyocr.Reader) EasyOCR reader object.
     :param image: The preprocessed binary image (OpenCV format).
     :param sub_rectangles: (list) Sorted list of sub-rectangles to extract text from.
+    :param ocr_kwargs: (dict) Keyword arguments for the EasyOCR reader.
     :param verbose: (bool) Whether to print debug information.
     :return: (dict) Extracted text from each sub-rectangle. Keys are positions from top-left to bottom-right.
     """
+
+    if ocr_kwargs is None:
+        ocr_kwargs = {}
 
     if not isinstance(image, np.ndarray):
         image = np.array(image)
@@ -128,15 +135,20 @@ def extract_text_from_subrectangles(ocr, image, sub_rectangles, verbose=False):
             fields += 1
             continue
 
-        results = ocr.readtext(sub_image, batch_size=25)
+        results = ocr.readtext(sub_image, **ocr_kwargs)
 
         # try to preprocess the image to improve OCR performance (a bit arbitrary as of now)
         # if not results or any([conf < .7 for _, _, conf in results]):
         if not results:
-            sub_image = cv2.GaussianBlur(sub_image, (5, 5), 0)
-            sub_image = cv2.morphologyEx(sub_image, cv2.MORPH_CLOSE, (5, 5), iterations=2)
+            # og_sub_image = sub_image.copy()
+            sub_image = cv2.GaussianBlur(sub_image, KERNEL, 0)
+            sub_image = cv2.morphologyEx(sub_image, cv2.MORPH_CLOSE, KERNEL, iterations=2)
             sub_image = cv2.resize(sub_image, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
             results = ocr.readtext(sub_image)
+
+        # if not results:
+        #     display_opencv_image(og_sub_image)
+        #     display_opencv_image(sub_image)
 
         if results:
             fields += 1
@@ -159,13 +171,14 @@ def extract_text_from_subrectangles(ocr, image, sub_rectangles, verbose=False):
     return extracted_text
 
 
-def process_image(image, ocr, display=False, verbose=False):
+def process_image(image, ocr, display=False, ocr_kwargs=None, verbose=False):
     """
     Process an image to extract text from sub-rectangles.
 
     :param image: (PIL.Image.Image) The image to process.
     :param ocr: (easyocr.Reader) EasyOCR reader object.
     :param display: (bool) Whether to display the processed image.
+    :param ocr_kwargs: (dict) Keyword arguments for the EasyOCR reader.
     :param verbose: (bool) Whether to print debug information.
     :return: (list) Extracted text from sub-rectangles.
     """
@@ -175,5 +188,9 @@ def process_image(image, ocr, display=False, verbose=False):
     # invert the image for better OCR performance
     final_image = cv2.bitwise_not(preprocessed)
 
-    extracted_text = extract_text_from_subrectangles(ocr, final_image, sub_rectangles, verbose=verbose)
+    extracted_text = extract_text_from_subrectangles(ocr,
+                                                     final_image,
+                                                     sub_rectangles,
+                                                     ocr_kwargs=ocr_kwargs,
+                                                     verbose=verbose)
     return extracted_text
