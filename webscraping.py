@@ -5,6 +5,12 @@ from bs4 import BeautifulSoup
 from datetime import datetime
 from io import BytesIO
 
+# Link Constants
+ODCY_LINK = "https://childcaresearch.ohio.gov/search?q=fVLNbhMxEN40v0uapgKhHhAiBy6VQkUR1xwWN1VDIVl1V0gFcXDWk42FY6%2b83pS98Q6ICxdeg1fgyBvwJjB2uhCJqrPS2DOf59tvPPZqnuf9RrOrtd0ddCRhyRXMiVqtlBwO3oDOuZKj46On9hsOSCFMoWEkoTCaiuEgLOaCJ%2bdQxuoDyJEshGhaxkfbREcn8ewoAqqTJdHcgOb0MZ7ZC7VacwZ6WqzmoFtEFdKUDcJN2X7LM6IY7FZH4jKD1gU1XKbdkGrDqZjSFbQnckGlyXuXWJvGijGBknszYUuuIz%2fUkCdLpYQfuSVIoX9Cy3y2mGWgkVPJ%2fTNV6O1E8zVQke%2b%2fgIXSsCkjVEN3vAaJGuy%2bE13x1QqD%2b1EGiRUEwHKy5IJZeC%2fWVOaZ0sYR9oMFNv6PqTdbg5Y8XRob3TnlIFiseZYfjKkWpaPBs2z8MUMaJPDPgLLIYO%2f3Qs3X1MA5l9hmihmQB5tBiPK0wCT7q%2bLuK07nXOCVTmReoKIEmtNgfEma0zEJA9wTEqI%2fJaROZkEjINEEB5FKThsThLxaDce5eSPthnejNTudmrOH%2fw3dXesFlSm8e2%2ffV%2b1Gs8jOk%2bNW3bL59cpVL9MFm51V4DdvloHWt3h7q7TtztrIIo0Htwi0IvyWdZbA71jn2%2b5s7rZCp9cNJub4IseS2bUTgYDEAHM8rkUv%2b%2frymV1%2fPf%2fCnC77p9Z25vvn4JtDOhVynfl0%2bPPwh0P8CqmsYu3%2bAQ%3d%3d"
+REL_PATH = "https://childcaresearch.ohio.gov/"
+
+# string constants
+ANNUAL = "ANNUAL"
 
 def extract_html(url):
     """
@@ -69,20 +75,25 @@ def extract_pdf(url, rel_path) -> str:
         rows = inspection_page.find_all('div', class_='resultsListRow')
 
         for row in rows:
-            date_column = row.find('div', class_='resultsListColumn')
+            columns = list(row.find_all('div', class_='resultsListColumn'))
+            date_column = columns[0]
+
+            # get the inspection type
+            inspect_type = list(columns[1].stripped_strings)[1]
 
             pdf_col = row.find('span', class_='inspectionPDFlink')
             pdf_link_tag = pdf_col.find('a', href=True)
 
             if pdf_link_tag and date_column:
 
+                date_column = list(date_column.stripped_strings)
                 # format into a datetime object for date comparisons
-                inspection_date = list(date_column)[2].strip()
+                inspection_date = date_column[1]
                 inspection_date = datetime.strptime(inspection_date, "%m/%d/%Y")
                 pdf_link = pdf_link_tag['href']
 
-                # only save the most recent date (may not be necessary, since all appear to be listed in order. Adds robustness though...)
-                if most_recent_date is None or inspection_date > most_recent_date:
+                # only save the most recent date (may not be necessary, since all appear to be listed in order
+                if inspect_type == ANNUAL and (most_recent_date is None or inspection_date > most_recent_date):
                     most_recent_date = inspection_date
                     most_recent_pdf_link = rel_path + pdf_link
 
@@ -102,13 +113,15 @@ def extract_all_pdfs(url, rel_path) -> pd.DataFrame:
 
     pdf_urls = []
     main_page = None
-    page_num = 1
+    page_num = 0
 
     # loop for all available pages
     while not (pdf_urls and main_page is None):
 
         # get the current page of results
-        main_page = extract_html(f"{url}&{page_num}")
+        page_link = f"{url}&p={page_num}"
+        print(f"Page link: {page_link}")
+        main_page = extract_html(page_link)
 
         if main_page is not None:
             # get all results rows for further processing
@@ -128,8 +141,13 @@ def extract_all_pdfs(url, rel_path) -> pd.DataFrame:
                         program_url = rel_path + program_link_tag['href']
                         inspection_url = extract_inspection(program_url, rel_path)
                         program_pdf_link = extract_pdf(inspection_url, rel_path) if inspection_url is not None else None
-                        program_df['program_name'] = [program_name]
-                        program_df['pdf'] = [program_pdf_link]
+
+                        # only save the pdf link if it is an annual inspection
+                        if program_pdf_link is not None:
+                            program_df['program_name'] = [program_name]
+                            program_df['pdf'] = [program_pdf_link]
+                        else:
+                            continue
 
                 address_columns = row.findAll("div", class_="resultsListColumn")
                 if address_columns:
@@ -140,7 +158,9 @@ def extract_all_pdfs(url, rel_path) -> pd.DataFrame:
                 # save the current row  information
                 pdf_urls.append(program_df)
 
-            break
+            # use for debugging to limit the number of pages to scrape
+            if page_num > 5:
+                break
 
         # next page
         page_num += 1
@@ -165,3 +185,15 @@ def download_pdf(pdf_url) -> BytesIO | None:
     else:
         print(f"Failed to download PDF: {response.status_code}")
         return None
+
+
+if __name__ == "__main__":
+    # extract all pdf links
+    pdf_links = extract_all_pdfs(ODCY_LINK, REL_PATH)
+
+    print(f"Total inspection reports: {len(pdf_links)}")
+
+    # ensure all pdf links are annual
+    pdf_links = pdf_links[pdf_links['pdf'].str.contains("ANNUAL")]
+    print(f"Found {len(pdf_links)} annual inspection reports.")
+
