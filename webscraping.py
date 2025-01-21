@@ -354,7 +354,7 @@ def download_pdf(pdf_url) -> BytesIO | None:
         return None
 
 
-def load_ODJFS_data(odcy_link, rel_path, pdf_links_path="pdf_links.csv", nc_df_path="non_compliance.csv"):
+def load_ODJFS_data(odcy_link, rel_path, pdf_links_path="pdf_links.csv", nc_df_path="non_compliance.csv", num_jobs=1):
     """
     Checks if specified files already exist. If not, generates them using extract_all_centers,
     saves them, and returns the corresponding DataFrames.
@@ -370,10 +370,17 @@ def load_ODJFS_data(odcy_link, rel_path, pdf_links_path="pdf_links.csv", nc_df_p
     """
 
     if os.path.exists(pdf_links_path) and os.path.exists(nc_df_path):
-        pdf_links = pd.read_csv(pdf_links_path)
+        print("Loading existing data...")
+        pdf_links = pd.read_csv(pdf_links_path, index_col=0)
         nc_df = pd.read_csv(nc_df_path)
+        nc_df.reset_index(inplace=True, drop=True)
+        nc_df.set_index(["program_name", "rule", "occurrence"], inplace=True)
     else:
-        pdf_links, nc_df = extract_all_centers(odcy_link, rel_path)
+        print("Webscraping Data (make sure the paths are valid)")
+        if num_jobs > 1:
+            pdf_links, nc_df = parallel_extract(odcy_link, rel_path, total_pages=212, chunk_size=5, processes=num_jobs)
+        else:
+            pdf_links, nc_df = extract_all_centers(odcy_link, rel_path)
 
         pdf_links.to_csv(pdf_links_path, index=True)
         nc_df.to_csv(nc_df_path, index=True)
