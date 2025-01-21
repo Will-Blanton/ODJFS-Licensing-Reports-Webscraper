@@ -3,11 +3,13 @@ Author: Will Blanton
 
 This file contains functions used for preprocessing the pdf images and extracting text from them.
 """
-
+import time
 
 import cv2
 import numpy as np
 from PIL import Image
+
+DPI = 300
 
 # 500 dpi
 # MIN_FIELD_WIDTH = 250
@@ -15,10 +17,9 @@ from PIL import Image
 # KERNEL = (5, 5)
 
 # 300 dpi
-MIN_FIELD_WIDTH = 150
-MIN_FIELD_HEIGHT = 6
+MIN_FIELD_WIDTH = DPI // 2
+MIN_FIELD_HEIGHT = DPI // 50
 KERNEL = (3, 3)
-
 
 
 def display_opencv_image(image):
@@ -182,15 +183,28 @@ def process_image(image, ocr, display=False, ocr_kwargs=None, verbose=False):
     :param verbose: (bool) Whether to print debug information.
     :return: (list) Extracted text from sub-rectangles.
     """
+    if verbose:
+        start = time.time()
     preprocessed = preprocess_image(image, display=False)
+    if verbose:
+        print(f"Preprocessing took {time.time() - start:.2f} seconds.")
+
+    if verbose:
+        start_rect = time.time()
     sub_rectangles = get_field_rectangles(preprocessed, display=display, verbose=verbose)
+    if verbose:
+        print(f"Getting field rectangles took {time.time() - start_rect:.2f} seconds.")
 
     # invert the image for better OCR performance
     final_image = cv2.bitwise_not(preprocessed)
 
+    if verbose:
+        start_ocr = time.time()
     extracted_text = extract_text_from_subrectangles(ocr,
                                                      final_image,
                                                      sub_rectangles,
                                                      ocr_kwargs=ocr_kwargs,
                                                      verbose=verbose)
+    if verbose:
+        print(f"Extracting text took {time.time() - start_ocr:.2f} seconds.")
     return extracted_text
