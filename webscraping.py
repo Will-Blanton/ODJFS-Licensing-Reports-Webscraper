@@ -16,9 +16,12 @@ REL_PATH = "https://childcaresearch.ohio.gov/"
 
 # string constants
 ANNUAL = "ANNUAL"
+PROGRAM_NAME = "program_name"
+PROGRAM_ID = "program_id"
 
 # regex patterns
-FINDINGS_PATTERN = r"(?:number\(s\)?|number|numbers)\s*(.*?)(?=\s*below)"
+# FINDINGS_PATTERN = r"(?:number\(s\)?|number|numbers)\s*(.*?)(?=\s*below)"
+FINDINGS_PATTERN = r"(?:number\(s\)?|number|numbers)\s*(.*?)\s*(below)"
 
 
 def extract_html(url):
@@ -159,13 +162,6 @@ def extract_non_compliance(nc_link, rel_path) -> pd.DataFrame:
     :return: a dataframe containing the non-compliance information
     """
 
-    # TODO: remove this debug code
-    # if nc_link == "https://childcaresearch.ohio.gov//inspections/201048/2024-10-29/ANNUAL?q=fVLNbhMxEN40v0uapgKhHhAiBy6VQkUR1xwWN1VDIVl1V0gFcXDWk42FY6%2b83pS98Q6ICxdeg1fgyBvwJjB2uhCJqrPS2DOf59tvPPZqnuf9RrOrtd0ddCRhyRXMiVqtlBwO3oDOuZKj46On9hsOSCFMoWEkoTCaiuEgLOaCJ%2bdQxuoDyJEshGhaxkfbREcn8ewoAqqTJdHcgOb0MZ7ZC7VacwZ6WqzmoFtEFdKUDcJN2X7LM6IY7FZH4jKD1gU1XKbdkGrDqZjSFbQnckGlyXuXWJvGijGBknszYUuuIz%2fUkCdLpYQfuSVIoX9Cy3y2mGWgkVPJ%2fTNV6O1E8zVQke%2b%2fgIXSsCkjVEN3vAaJGuy%2bE13x1QqD%2b1EGiRUEwHKy5IJZeC%2fWVOaZ0sYR9oMFNv6PqTdbg5Y8XRob3TnlIFiseZYfjKkWpaPBs2z8MUMaJPDPgLLIYO%2f3Qs3X1MA5l9hmihmQB5tBiPK0wCT7q%2bLuK07nXOCVTmReoKIEmtNgfEma0zEJA9wTEqI%2fJaROZkEjINEEB5FKThsThLxaDce5eSPthnejNTudmrOH%2fw3dXesFlSm8e2%2ffV%2b1Gs8jOk%2bNW3bL59cpVL9MFm51V4DdvloHWt3h7q7TtztrIIo0Htwi0IvyWdZbA71jn2%2b5s7rZCp9cNJub4IseS2bUTgYDEAHM8rkUv%2b%2frymV1%2fPf%2fCnC77p9Z25vvn4JtDOhVynfl0%2bPPwh0P8CqmsYu3%2bAQ%3d%3d&p=0&pi=":
-    #     print("ISSUE")
-    #
-    # if nc_link == "https://childcaresearch.ohio.gov/inspections/205547?q=fVLNbhMxEN40v0uapgKhHhAiBy6VQkUR1xwWN1VDIVl1V0gFcXDWk42FY6%2b83pS98Q6ICxdeg1fgyBvwJjB2uhCJqrPS2DOf59tvPPZqnuf9RrOrtd0ddCRhyRXMiVqtlBwO3oDOuZKj46On9hsOSCFMoWEkoTCaiuEgLOaCJ%2bdQxuoDyJEshGhaxkfbREcn8ewoAqqTJdHcgOb0MZ7ZC7VacwZ6WqzmoFtEFdKUDcJN2X7LM6IY7FZH4jKD1gU1XKbdkGrDqZjSFbQnckGlyXuXWJvGijGBknszYUuuIz%2fUkCdLpYQfuSVIoX9Cy3y2mGWgkVPJ%2fTNV6O1E8zVQke%2b%2fgIXSsCkjVEN3vAaJGuy%2bE13x1QqD%2b1EGiRUEwHKy5IJZeC%2fWVOaZ0sYR9oMFNv6PqTdbg5Y8XRob3TnlIFiseZYfjKkWpaPBs2z8MUMaJPDPgLLIYO%2f3Qs3X1MA5l9hmihmQB5tBiPK0wCT7q%2bLuK07nXOCVTmReoKIEmtNgfEma0zEJA9wTEqI%2fJaROZkEjINEEB5FKThsThLxaDce5eSPthnejNTudmrOH%2fw3dXesFlSm8e2%2ffV%2b1Gs8jOk%2bNW3bL59cpVL9MFm51V4DdvloHWt3h7q7TtztrIIo0Htwi0IvyWdZbA71jn2%2b5s7rZCp9cNJub4IseS2bUTgYDEAHM8rkUv%2b%2frymV1%2fPf%2fCnC77p9Z25vvn4JtDOhVynfl0%2bPPwh0P8CqmsYu3%2bAQ%3d%3d&p=1":
-    #     print("WORD ISSUE")
-
     try:
         rules = []
 
@@ -183,23 +179,35 @@ def extract_non_compliance(nc_link, rel_path) -> pd.DataFrame:
 
                 # indicate no findings but the rule still non-compliant
                 findings = ['-1']
+                code = "Missing NC link"
 
                 if "href" in description.attrs:
                     description_link = rel_path + description['href']
 
                     rule_page = extract_html(description_link)
+
+                    # ex
                     if rule_page:
+                        # the misspelling is intentional... it is in the HTML
                         finding_txt = rule_page.find('span', class_='inspectionFindsingsText')
                         finding_txt = finding_txt.get_text(strip=True)
-                        match = re.search(FINDINGS_PATTERN, finding_txt)
-                        if match:
-                            findings = extract_numbers_with_letters(match.group(1))
+                        finding_match = re.search(FINDINGS_PATTERN, finding_txt)
+                        if finding_match:
+                            findings = extract_numbers_with_letters(finding_match.group(1))
+
+                            # get the code and remove : from the beginning
+                            code_idx = finding_match.end()
+                            code = finding_txt[code_idx:]
+                            code = code[code.find("1"):]
+                        else:
+                            code = finding_txt
 
                 rules.append(
                     pd.DataFrame.from_dict(
                         {
                             "rule": [rule],
-                            "domain": [None],
+                            "code": [code],
+                            # "domain": [None],
                             "compliance": [None],
                             "findings": [findings],
                         }
@@ -270,12 +278,18 @@ def extract_all_centers(url, rel_path, start_page=0, end_page=211) -> (pd.DataFr
 
                                 # only save the pdf link if it is an annual inspection
                                 if program_pdf_link is not None:
-                                    program_df['program_name'] = [program_name]
+
+                                    program_ID = re.search(r"pdf/(\d+)_", program_pdf_link).group(1)
+
+                                    program_df[PROGRAM_ID] = [program_ID]
+                                    program_df[PROGRAM_NAME] = [program_name]
                                     program_df['pdf'] = [program_pdf_link]
 
                                     if nc_link is not None:
                                         rule_df = extract_non_compliance(nc_link, rel_path)
-                                        rule_df['program_name'] = program_name
+                                        rule_df[PROGRAM_ID] = program_ID
+                                        rule_df[PROGRAM_NAME] = program_name
+                                        rule_df['nc_link'] = nc_link
                                         non_compliance_dfs.append(rule_df)
                                 else:
                                     continue
@@ -301,14 +315,13 @@ def extract_all_centers(url, rel_path, start_page=0, end_page=211) -> (pd.DataFr
             # next page
             page_num += 1
 
-
     # combine into a single dataframe
     if pdf_urls and non_compliance_dfs:
         url_df = pd.concat(pdf_urls, axis=0)
         nc_df = pd.concat(non_compliance_dfs, axis=0)
 
-        nc_df.set_index(["program_name", "rule", "occurrence"], inplace=True)
-        url_df.set_index("program_name", inplace=True)
+        nc_df.set_index([PROGRAM_ID, "rule", "occurrence"], inplace=True)
+        url_df.set_index(PROGRAM_ID, inplace=True)
     else:
         if not pdf_urls:
             print(f"No PDF URLs extracted for pages {start_page}-{end_page}")
@@ -335,6 +348,9 @@ def parallel_extract(url, rel_path, total_pages, chunk_size=5, processes=4):
     url_dfs, nc_dfs = zip(*results)
     combined_url_df = pd.concat(url_dfs, axis=0)
     combined_nc_df = pd.concat(nc_dfs, axis=0)
+
+    combined_url_df.sort_values(by=PROGRAM_NAME, inplace=True)
+    combined_nc_df.sort_values(by=PROGRAM_NAME, inplace=True)
 
     return combined_url_df, combined_nc_df
 
@@ -390,10 +406,10 @@ def load_ODJFS_data(odcy_link, rel_path, pdf_links_path="pdf_links.csv", nc_df_p
 
 if __name__ == "__main__":
     # extract all pdf links
-    pdf_links, nc_df = parallel_extract(ODCY_LINK, REL_PATH, total_pages=50, chunk_size=5, processes=10)
+    pdf_links, nc_df = parallel_extract(ODCY_LINK, REL_PATH, total_pages=212, chunk_size=10, processes=10)
 
-    pdf_links.to_csv("pdf_links.csv", index=True)
-    nc_df.to_csv("nc_df", index=True)
+    pdf_links.to_csv("pdf_links_final.csv", index=True)
+    nc_df.to_csv("nc_df_final.csv", index=True)
     print(f"Total inspection reports: {len(pdf_links)}")
 
     # ensure all pdf links are annual
