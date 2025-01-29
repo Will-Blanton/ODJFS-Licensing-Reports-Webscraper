@@ -1,63 +1,67 @@
-# Summary
+# ODJFS Licensing Reports Webscraper
 
-# Rules
+## Overview
 
-Collected from the first two PDFs
+This project aims to compile a dataset of Ohio Department of Jobs and Family Services (ODJFS) licensing reports for childcare centers. We focus primarily on non-compliance data (e.g., which rules were found to be broken during the licensing inspection) but also compile information on each center (e.g., center capacity and age group ratios). The non-compliance data is primarily web-scraped from the ODJFS portal for ease and reliability, including:
+- Center ID
+- Non-compliance findings
+- Non-compliance code
+- Non-compliance Webpage Link
 
-- **Missing 01**
-- 5101:2-12-02 License Posted
-- 5101:2-12-02 Current Information
-- 5101:2-12-03 Inspection Requirements
-- 5101:2-12-04 Building Department Inspection
-- 5101:2-12-04 Fire Inspection
-- 5101:2-12-04 Food Service Requirements
-- **Missing 05**
-- **Missing 06**
-- 5101:2-12-07 Administrator Qualifications
-- 5101:2-12-07 Administrator Responsibilities/Requirements
-- 5101:2-12-07 Written Program Policies and Procedures
-- 5101:2-12-08 Medical Statement
-- 5101:2-12-08 Orientation Training & Whistle Blower Protection
-- 5101:2-12-08 Child Care Staff Member Educational Requirements
-- 5101:2-12-09 Background Check Requirements
-- 5101:2-12-10 Professional Development Requirements
-- 5101:2-12-10 Health Training Requirements
-- 5101:2-12-11 Indoor Space Requirements
-- 5101:2-12-11 Outdoor Space Requirements
-- 5101:2-12-11 Outdoor Play Equipment
-- 5101:2-12-11 Separation of Children Under 2 1/2 Years
-- 5101:2-12-11 Outdoor Play Fall Zones
-- 5101:2-12-12 Safe Equipment
-- 5101:2-12-12 Safe Environment
-- 5101:2-12-13 Sanitary Equipment and Environment
-- 5101:2-12-13 Handwashing Requirements
-- 5101:2-12-13 Smoke Free Environment
-- 5101:2-12-14 Transportation and Field Trip Procedures
-- 5101:2-12-15 Medical/Physical Care Plans
-- 5101:2-12-15 Child Medical and Enrollment Records
-- 5101:2-12-16 Written Disaster Plan
-- 5101:2-12-16 Medical, Dental, and General Emergency Plan
-- 5101:2-12-16 Emergency Drills
-- 5101:2-12-16 First Aid/Standard Precautions
-- 5101:2-12-16 Management of Communicable Disease
-- 5101:2-12-16 Incident/Injury Reporting
-- 5101:2-12-17 Daily Schedule
-- 5101:2-12-17 Materials and Equipment
-- 5101:2-12-17 Daily Outdoor Play
-- 5101:2-12-18 License Capacity
-- 5101:2-12-18 Attendance Records
-- 5101:2-12-18 Ratio
-- 5101:2-12-18 Group Size
-- 5101:2-12-19 Supervision
-- 5101:2-12-19 Child Guidance
-- 5101:2-12-20 Cots and Napping
-- 5101:2-12-20 Cribs
-- 5101:2-12-21 Evening and Overnight Care
-- 5101:2-12-22 Meal and Snack Requirements
-- 5101:2-12-22 Fluid Milk Requirements
-- 5101:2-12-22 Safe Food Handling/Storage
-- 5101:2-12-23 Infant Daily Care
-- 5101:2-12-23 Infant Bottle and Food Preparation
-- 5101:2-12-23 Diapering and Toilet Training
-- 5101:2-12-24 Swimming and Water Safety Requirements
-- 5101:2-12-25 Medication Administration
+Much of the center-specific data is stored in PDF reports available on the ODJFS webpages. These reports lack embedded text, so we use the EasyOCR library to extract the required fields from each PDF to construct the center dataset. 
+
+### Technical Approach
+
+- **Web Scraping:** Extracts non-compliance data efficiently in about 40 minutes using 10 parallel processing cores.
+- **PDF Extraction:** Uses EasyOCR to process scanned PDFs, which is currently slow (taking 2-3 days with 2 parallel processes due to VRAM limitations). This can be improved by utilizing machines with more VRAM.
+- **Optimization Efforts:** Work is ongoing to enhance PDF processing efficiency (e.g., adjust image processing to lower DPI).
+
+## Features
+
+- **Automated Data Extraction:** Web scraping for non-compliance records and OCR-based PDF parsing.
+- **Structured Data Compilation:** Aggregates licensing findings with center-specific details.
+- **Scalability Improvements:** Exploring faster PDF processing through hardware optimizations.
+
+## Installation (NOT UP TO DATE. THERE ARE ADDITIONAL REQUIREMENTS)
+
+To set up the project locally, follow these steps:
+
+### Prerequisites
+Ensure you have the following installed:
+- Python (>=3.8)
+- pip
+- Virtual Environment (optional but recommended)
+
+### Steps
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/your-repository/ODJFS-Licensing-Report-Webscraper.git
+   cd ODJFS-Licensing-Report-Webscraper
+   ```
+2. Create and activate a virtual environment:
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # On Windows use `venv\Scripts\activate`
+   ```
+3. Install required dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+4. Run the project:
+   ```bash
+   python main.py
+   ```
+   
+## Folder Structure
+
+```
+ODJFS-Licensing-Report-Webscraper/
+│-- data/               # Webscraped data and final results (Last scraped on January 20th, 2025)
+│-- text_extraction.py  # Code for processing PDFs and extracting text fields
+│-- test_scraper.ipynb  # Jupyter notebook for testing text extraction before scaling to the entire dataset
+│-- webscraping.py      # Code for extracting non-compliance, PDF, and center data from the ODJFS website
+│-- requirements.txt    # Python dependencies
+│-- main.py             # Main execution script (runs both web scraping and PDF extraction)
+│-- README.md           # Project documentation
+```
+
