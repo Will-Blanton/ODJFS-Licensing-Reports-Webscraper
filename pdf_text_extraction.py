@@ -9,6 +9,7 @@ import cv2
 import numpy as np
 from PIL import Image
 
+# TODO: reduce DPI for faster processing (update image processing accordingly)
 DPI = 300
 
 # 500 dpi
