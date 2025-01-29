@@ -61,7 +61,7 @@ ODJFS-Licensing-Report-Webscraper/
 │-- test_scraper.ipynb  # Jupyter notebook for testing text extraction before scaling to the entire dataset
 │-- webscraping.py      # Code for extracting non-compliance, PDF, and center data from the ODJFS website
 │-- requirements.txt    # Python dependencies
-│-- main.py             # Main execution script (runs both web scraping and PDF extraction)
+│-- main.py             # Main execution script (runs both web scraping and PDF extraction). Currently still in progress.
 │-- README.md           # Project documentation
 ```
 
