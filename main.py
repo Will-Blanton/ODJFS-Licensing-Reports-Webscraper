@@ -1,5 +1,6 @@
 import argparse
 import re
+from itertools import chain
 from time import time
 
 import easyocr
@@ -15,14 +16,15 @@ from collections import defaultdict
 from tqdm import tqdm
 
 from webscraping import REL_PATH, ODCY_LINK, load_ODJFS_data
-from text_extraction import process_image, DPI
+from pdf_text_extraction import process_image, DPI
 
 # --------------------------------------------------
 # Constants
 # --------------------------------------------------
 
 # field names
-PROGRAM_NAME = "program_name"
+PROGRAM_NAME = "program_name"   # values are not unique
+PROGRAM_ID = "program_id"   # program num used as the index
 
 # section names
 PROGRAM_DETAILS = "Program Details"
@@ -158,6 +160,7 @@ def flatten_rows(rows):
     return flattened
 
 
+# No longer needed (we found a better way to process the rules with just web-scraping)
 def count_compliances(program_df, rule_df):
     """
     Aggregates rule and compliance counts from the data DataFrame and merges them into the program DataFrame.
@@ -215,9 +218,9 @@ def process_program_details(rows, thresh=95):
     """
 
     p1_fields = [
-        "Program Number",
-        "Program Type",
-        "County",
+        # "Program Number",
+        # "Program Type", # Should always be "Child Care Center"
+        "County",   # TODO: web-scrape instead (?)
         "Building Approval Date",
         "Use Group/Code",
         "Occupancy Limit",
@@ -230,7 +233,7 @@ def process_program_details(rows, thresh=95):
         "Inspection Date",
         "Begin Time",
         "End Time",
-        "Reviewer",
+        "Reviewer", # TODO: web-scrape instead to hande multiple reviewers
         "No. Rules Verified",
         # "No. Rules with Non-compliance", Just use the non-compliance dataframe instead
         # "No. Serious Risk",
@@ -242,7 +245,6 @@ def process_program_details(rows, thresh=95):
 
     row_idx = 0
 
-    # TODO: refactor to handle mutiple Reviewers, for example
     for field_name in p1_fields:
         row_idx, col_idx = find_field_in_rows(
             rows=rows,
@@ -309,9 +311,6 @@ def process_license_table(rows):
         else:
             current_row = current_row[1:]
 
-        # TODO: remove debug
-        # print(f"Current Row: {current_row}")
-
         table[t_row] = {columns[i]: field[0] if len(field) > 0 else (None, None) for i, field in enumerate(current_row)}
 
     df = pd.DataFrame({0: table}).T
@@ -377,6 +376,7 @@ def process_ratio_table(rows):
     return df, end_row
 
 
+# No longer needed (we found a better way to process the rules with just web-scraping)
 def process_rules_in_compliance(rows, rule_df, compliance_level):
     """
     Process the OCR results for the last page of the PDF.
@@ -488,9 +488,6 @@ def process_ocr_results(center_df: pd.DataFrame, rule_df: pd.DataFrame, extracte
     for extracted_text in extracted_texts:
         rows += group_into_rows(extracted_text)
 
-    print(f"Rows: {len(rows)}")
-    # print(rows)
-
     # use a separate dataframe for the rules
     processed_dfs = [center_df.reset_index(drop=False)]
 
@@ -534,9 +531,10 @@ def process_df_chunk(center_df, rule_df):
         (PROGRAM_DETAILS, process_program_details, {}),
         (LICENSE_CAPACITY, process_license_table, {}),
         (RATIO_OBSERVED, process_ratio_table, {}),
-        (SERIOUS_NC, process_rules_in_compliance, {"compliance_level": "Serious", "rule_df": rule_df}),
-        (MODERATE_NC, process_rules_in_compliance, {"compliance_level": "Moderate", "rule_df": rule_df}),
-        (LOW_NC, process_rules_in_compliance, {"compliance_level": "Low", "rule_df": rule_df}),
+        # Not needed anymore. We found a better way to process the rules with just web-scraping.
+        # (SERIOUS_NC, process_rules_in_compliance, {"compliance_level": "Serious", "rule_df": rule_df}),
+        # (MODERATE_NC, process_rules_in_compliance, {"compliance_level": "Moderate", "rule_df": rule_df}),
+        # (LOW_NC, process_rules_in_compliance, {"compliance_level": "Low", "rule_df": rule_df}),
     ]
 
     results = []
@@ -548,24 +546,27 @@ def process_df_chunk(center_df, rule_df):
 
     ocr = easyocr.Reader(['en'], gpu=True)
 
-    for program_name, center in tqdm(center_df.iterrows(), total=center_df.shape[0], desc="Processing PDFs"):
+    for program_id, center in tqdm(center_df.iterrows(), total=center_df.shape[0], desc="Processing PDFs"):
+
         # try:
         local_file, _ = urllib.request.urlretrieve(center['pdf'])
-        images = convert_from_path(local_file, dpi=DPI)
 
-        extracted_texts = [process_image(image, ocr, ocr_kwargs=ocr_kwargs, verbose=True) for image in images]
+        # only process the first 3 pages since we only need the first page info and ratios (which can take multiple)
+        images = convert_from_path(local_file, dpi=DPI, first_page=1, last_page=3)
+
+        extracted_texts = [process_image(image, ocr, ocr_kwargs=ocr_kwargs, verbose=False) for image in images]
 
         # clean up the buffered image
         os.remove(local_file)
         del images
 
-        start_time = time()
-
         center_df_row = center.to_frame().T
-        rules = rule_df[rule_df.index.get_level_values(PROGRAM_NAME) == program_name].copy()
+        rules = rule_df[rule_df.index.get_level_values(PROGRAM_ID) == program_id].copy()
         program_df, rules = process_ocr_results(center_df_row, rules, extracted_texts, SECTION_METHODS)
 
-        print(f"Processing {program_name} results took {time() - start_time:.2f} seconds.")
+        print(program_df)
+
+        # TODO: remove rules (?)
         results.append((program_df, rules))
         # except Exception as e:
         #     print(f"Error processing center {center['pdf']}: {e}")
@@ -591,36 +592,36 @@ def main(args):
         ODCY_LINK, REL_PATH, pdf_links_path=args.pdf_links_path, nc_df_path=args.nc_df_path, num_jobs=args.num_jobs
     )
 
-    center_df = center_df.iloc[:20].copy()
-    rule_df = rule_df[rule_df.index.get_level_values(PROGRAM_NAME).isin(center_df.index)].copy()
+    rule_df = rule_df[rule_df.index.get_level_values(PROGRAM_ID).isin(center_df.index)].copy()
 
     if not partial_center_df.empty:
         # remove already processed centers from the data
         center_df = center_df[~center_df.index.isin(partial_center_df.index)]
-        rule_df = rule_df[~rule_df.index.get_level_values(PROGRAM_NAME).isin(partial_center_df.index)]
+        rule_df = rule_df[~rule_df.index.get_level_values(PROGRAM_ID).isin(partial_center_df.index)]
 
     # split the center_df into chunks
-    chunk_size = len(center_df) // args.batch_size
+    num_chunks = max(len(center_df) // args.batch_size, 1)
+    chunk_size = len(center_df) // num_chunks
     center_chunks = [center_df.iloc[i:i + chunk_size] for i in range(0, len(center_df), chunk_size)]
     unique_centers = [center_chunk.index.unique() for center_chunk in center_chunks]
-    rule_chunks = [rule_df[rule_df.index.get_level_values(PROGRAM_NAME).isin(c)] for c in unique_centers]
+    rule_chunks = [rule_df[rule_df.index.get_level_values(PROGRAM_ID).isin(c)] for c in unique_centers]
     all_args = [(center_chunk, rule_chunk) for center_chunk, rule_chunk in zip(center_chunks, rule_chunks)]
 
-    print(f"Processing {len(center_df)} centers in {len(all_args)} chunks.")
-
     # process in batches of num_jobs with tqdm progress bar
-    num_batches = (len(all_args) + args.num_jobs - 1) // args.num_jobs
-    print(f"Processing in {num_batches} batches.")
+    print(f"Processing {len(center_df)} centers in {args.checkpoints} batches.")
 
-    batch_num = 1
-    for batch_start in range(0, len(all_args), args.num_jobs):
-        batch_args = all_args[batch_start:batch_start + args.num_jobs]
+    # run batches in parallel, but only some at a time so we can save checkpoints to break up the processing
+    checkpoint_size = len(all_args) // args.checkpoints
+    for batch_num, batch_start in enumerate(range(0, len(all_args), checkpoint_size)):
+        batch_args = all_args[batch_start:batch_start + checkpoint_size]
 
         with mp.Pool(processes=args.num_jobs) as pool:
             batch_results = pool.starmap(process_df_chunk, batch_args)
 
-        batch_center_df = pd.concat([result[0] for result in batch_results], axis=0)
-        batch_rule_df = pd.concat([result[1] for result in batch_results], axis=0)
+        flattened_results = list(chain.from_iterable(batch_results))
+
+        batch_center_df = pd.concat([result[0] for result in flattened_results], axis=0)
+        batch_rule_df = pd.concat([result[1] for result in flattened_results], axis=0)
 
         partial_center_df = pd.concat([partial_center_df, batch_center_df], axis=0)
         partial_rule_df = pd.concat([partial_rule_df, batch_rule_df], axis=0)
@@ -630,13 +631,12 @@ def main(args):
         partial_rule_df.to_csv(args.non_compliance_path, index=True)
 
         print(f"Checkpoint saved after processing batch {batch_num}.")
-        batch_num += 1
 
     print("All batches processed and results saved.")
 
     # TODO: order the column names
-    final_center_df = count_compliances(partial_center_df, partial_rule_df)
-    final_center_df.sort_index(axis=1, inplace=True)
+    # final_center_df = count_compliances(partial_center_df, partial_rule_df)
+    final_center_df = partial_center_df.sort_index(axis=1)
     final_center_df.to_csv(args.center_path, index=True)
     print(f"Final center results saved to {args.center_path}")
 
@@ -656,6 +656,10 @@ if __name__ == "__main__":
                         type=int,
                         help="Number of PDFS to process in a chunk. Default is 16.",
                         default=16)
+    parser.add_argument("--checkpoints",
+                        type=int,
+                        help="Number of checkpoints to save during processing. Default is 10.",
+                        default=10)
     parser.add_argument("--verbose", action="store_true", help="Enable verbose logging.")
     args = parser.parse_args()
 

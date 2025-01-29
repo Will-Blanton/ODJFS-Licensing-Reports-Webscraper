@@ -378,8 +378,8 @@ def load_ODJFS_data(odcy_link, rel_path, pdf_links_path="pdf_links.csv", nc_df_p
     Args:
         odcy_link (str): The link used to extract center data.
         rel_path (str): The relative path used in the extraction process.
-        pdf_links_path (str): File path to save or load the pdf_links DataFrame. Default: "pdf_links2.csv".
-        nc_df_path (str): File path to save or load the non_compliance DataFrame. Default: "non_compliance.csv".
+        pdf_links_path (str): File path to save or load the pdf_links DataFrame.
+        nc_df_path (str): File path to save or load the non_compliance DataFrame.
 
     Returns:
         tuple: A tuple of two DataFrames (pdf_links, nc_df).
@@ -390,7 +390,7 @@ def load_ODJFS_data(odcy_link, rel_path, pdf_links_path="pdf_links.csv", nc_df_p
         pdf_links = pd.read_csv(pdf_links_path, index_col=0)
         nc_df = pd.read_csv(nc_df_path)
         nc_df.reset_index(inplace=True, drop=True)
-        nc_df.set_index(["program_name", "rule", "occurrence"], inplace=True)
+        nc_df.set_index(["program_id", "rule", "occurrence"], inplace=True)
     else:
         print("Webscraping Data (make sure the paths are valid)")
         if num_jobs > 1:
