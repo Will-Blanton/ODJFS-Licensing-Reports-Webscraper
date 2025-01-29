@@ -57,11 +57,12 @@ Ensure you have the following installed:
 ```
 ODJFS-Licensing-Report-Webscraper/
 │-- data/               # Webscraped data and final results (Last scraped on January 20th, 2025)
-│-- text_extraction.py  # Code for processing PDFs and extracting text fields
-│-- test_scraper.ipynb  # Jupyter notebook for testing text extraction before scaling to the entire dataset
-│-- webscraping.py      # Code for extracting non-compliance, PDF, and center data from the ODJFS website
-│-- requirements.txt    # Python dependencies
+|-- test/               # Test data for testing the PDF extraction process.
 │-- main.py             # Main execution script (runs both web scraping and PDF extraction)
+│-- pdf_processing_test.ipynb  # Jupyter notebook for testing text extraction before scaling to the entire dataset
+│-- pdf_text_extraction.py  # Code for processing PDFs and extracting text fields
 │-- README.md           # Project documentation
+│-- requirements.txt    # Python dependencies
+│-- webscraping.py      # Code for extracting non-compliance, PDF, and center data from the ODJFS website
 ```
 
