@@ -1,3 +1,4 @@
+import argparse
 import os
 import multiprocessing as mp
 import pandas as pd
@@ -226,6 +227,60 @@ def extract_non_compliance(nc_link, rel_path) -> pd.DataFrame:
     return nc_df
 
 
+def extract_all_non_compliances(nc_link: str, rel_path: str) -> pd.DataFrame:
+    """
+    Extract non-compliances across all paginated pages.
+
+    :param nc_link: Base link to the first non-compliance page
+    :param rel_path: Relative path to prepend to discovered links
+    :return: DataFrame combining non-compliance info from all pages
+    """
+
+    # kinda scuffed that we open the first page twice, but it's fine
+    nc_df = extract_non_compliance(nc_link, rel_path)
+    nc_df = nc_df if nc_df is not None else pd.DataFrame()
+
+    # process the rest of the pages
+    try:
+        first_page = extract_html(nc_link)
+        if first_page:
+
+            pager_span = first_page.find('span', id='ContentPlaceHolder1_pagerInspectionDetails')
+            if pager_span:
+
+                # should be fine since there shouldn't be more than 3 pages of non-compliances
+                page_numbers = pager_span.find('span', class_='PageNumbers')
+
+                if page_numbers:
+                    all_dfs = [nc_df]
+
+                    # leave out the first page, as we already have it
+                    page_links = []
+
+                    anchors = page_numbers.find_all('a', class_='linkToPage', href=True)
+
+                    # If there's any anchor, we handle multi-page
+                    # e.g. "2", "3", ...
+                    # don't include the first page, since it is not a link (<a ...>
+                    for a in anchors:
+                        href = a['href']
+                        page_link = rel_path + href
+                        if page_link not in page_links:
+                            page_links.append(page_link)
+
+                    # call single-page extractor for each link & collect
+                    for link in page_links:
+                        df_page = extract_non_compliance(link, rel_path)
+                        if df_page is not None:
+                            all_dfs.append(df_page)
+
+                    nc_df = pd.concat(all_dfs, axis=0, ignore_index=True)
+    except Exception as e:
+        print(f"Error in extract_all_non_compliances: {e}")
+    finally:
+        return nc_df
+
+
 def extract_all_centers(url, rel_path, start_page=0, end_page=211) -> (pd.DataFrame, pd.DataFrame):
     """
     Extract all pdf links and associated center info (e.g., name and address info) into a dataFrame for further parsing.
@@ -246,6 +301,14 @@ def extract_all_centers(url, rel_path, start_page=0, end_page=211) -> (pd.DataFr
     main_page = None
     page_num = start_page
 
+    """
+    This uses a given start and end page to limit the number of pages to process
+    
+    The 'better' way would probably use a while loop with the "NextLast" tag to determine when to stop. Then, it would
+    dynamically determine the number of pages to process.
+    
+    This would at least be better for checking for the last page. Chunking would have to be done differently, though.
+    """
     with tqdm(desc=f"Processing Pages {start_page}-{end_page}", unit="page", total=end_page - start_page + 1) as pbar:
         # loop for all available pages
         while page_num <= end_page and not (pdf_urls and main_page is None):
@@ -286,7 +349,7 @@ def extract_all_centers(url, rel_path, start_page=0, end_page=211) -> (pd.DataFr
                                     program_df['pdf'] = [program_pdf_link]
 
                                     if nc_link is not None:
-                                        rule_df = extract_non_compliance(nc_link, rel_path)
+                                        rule_df = extract_all_non_compliances(nc_link, rel_path)
                                         rule_df[PROGRAM_ID] = program_ID
                                         rule_df[PROGRAM_NAME] = program_name
                                         rule_df['nc_link'] = nc_link
@@ -405,14 +468,43 @@ def load_ODJFS_data(odcy_link, rel_path, pdf_links_path="pdf_links.csv", nc_df_p
 
 
 if __name__ == "__main__":
-    # extract all pdf links
-    pdf_links, nc_df = parallel_extract(ODCY_LINK, REL_PATH, total_pages=212, chunk_size=10, processes=10)
+    if __name__ == "__main__":
+        parser = argparse.ArgumentParser(description="Script to extract PDF links and non-compliance data.")
+        parser.add_argument("pdf_links_output",
+                            help="Path to the output CSV file for extracted PDF links.")
 
-    pdf_links.to_csv("pdf_links_final.csv", index=True)
-    nc_df.to_csv("nc_df_final.csv", index=True)
-    print(f"Total inspection reports: {len(pdf_links)}")
+        parser.add_argument("nc_output",
+                            help="Path to the output CSV file for the non-compliance DataFrame.")
 
-    # ensure all pdf links are annual
-    pdf_links = pdf_links[pdf_links['pdf'].str.contains("ANNUAL")]
-    print(f"Found {len(pdf_links)} annual inspection reports.")
+        parser.add_argument("--total_pages",
+                            type=int,
+                            default=212,
+                            help="Number of total pages to extract (default: 212).")
 
+        parser.add_argument("--chunk_size",
+                            type=int,
+                            default=10,
+                            help="Number of pages to handle in each extraction chunk (default: 10).")
+
+        parser.add_argument("--num_workers",
+                            type=int,
+                            default=1,
+                            help="Number of parallel worker processes. For context, 10 workers takes about 40-50 minutes to create the entire dataset. (default: 1).")
+
+        args = parser.parse_args()
+
+        pdf_links, nc_df = parallel_extract(
+            ODCY_LINK,
+            REL_PATH,
+            total_pages=args.total_pages,
+            chunk_size=args.chunk_size,
+            processes=args.num_workers
+        )
+
+        pdf_links.to_csv(args.pdf_links_output, index=True)
+        nc_df.to_csv(args.nc_output, index=True)
+
+        print(f"Total inspection reports: {len(pdf_links)}")
+
+        pdf_links = pdf_links[pdf_links['pdf'].str.contains("ANNUAL")]
+        print(f"Found {len(pdf_links)} annual inspection reports.")
