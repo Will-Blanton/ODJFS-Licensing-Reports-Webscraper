@@ -8,6 +8,8 @@ import requests
 from bs4 import BeautifulSoup
 from datetime import datetime
 from io import BytesIO
+from pathlib import Path
+from urllib.parse import urlparse, parse_qs
 
 from tqdm import tqdm
 
@@ -266,13 +268,10 @@ def extract_all_non_compliances(nc_link: str, rel_path: str) -> pd.DataFrame:
                         href = a['href']
                         page_link = rel_path + href
                         if page_link not in page_links:
-                            page_links.append(page_link)
 
-                    # call single-page extractor for each link & collect
-                    for link in page_links:
-                        df_page = extract_non_compliance(link, rel_path)
-                        if df_page is not None:
-                            all_dfs.append(df_page)
+                            df_page = extract_non_compliance(page_link, rel_path)
+                            if df_page is not None:
+                                all_dfs.append(df_page)
 
                     nc_df = pd.concat(all_dfs, axis=0, ignore_index=True)
     except Exception as e:
@@ -281,7 +280,7 @@ def extract_all_non_compliances(nc_link: str, rel_path: str) -> pd.DataFrame:
         return nc_df
 
 
-def extract_all_centers(url, rel_path, start_page=0, end_page=211) -> (pd.DataFrame, pd.DataFrame):
+def extract_all_centers(url, rel_path, start_page=0, end_page=-1) -> (pd.DataFrame, pd.DataFrame):
     """
     Extract all pdf links and associated center info (e.g., name and address info) into a dataFrame for further parsing.
 
@@ -290,11 +289,14 @@ def extract_all_centers(url, rel_path, start_page=0, end_page=211) -> (pd.DataFr
     :param url: The Ohio childcaresearch website URL (https://childcaresearch.ohio.gov/search for licensed childcare)
     :param rel_path: The relative path to append to the pdf links (e.g., https://childcaresearch.ohio.gov)
     :param start_page: The starting page to process
-    :param end_page: The maximum number of pages to process
+    :param end_page: The maximum number of pages to process (gets all by default)
     :return: a dataframe containing the center name, address info, and link to the pdf for the most recent center licensing inspection and a dataframe containing the non-compliance information
     """
 
     # NOTE: could probably automate rel_path extraction from the url
+
+    if end_page < 0: 
+        end_page = get_last_page(url)
 
     pdf_urls = []
     non_compliance_dfs = []
@@ -315,7 +317,8 @@ def extract_all_centers(url, rel_path, start_page=0, end_page=211) -> (pd.DataFr
 
             # get the current page of results
             page_link = f"{url}&p={page_num}"
-            # print(f"Processing page {page_link}...")
+
+            print(f"Processing page {page_link}...")
             main_page = extract_html(page_link)
 
             if main_page is not None:
@@ -397,14 +400,49 @@ def extract_all_centers(url, rel_path, start_page=0, end_page=211) -> (pd.DataFr
     # return with the program name as the index
     return url_df, nc_df
 
+def get_last_page(url):
+    home_page = extract_html(url)
 
-def parallel_extract(url, rel_path, total_pages, chunk_size=5, processes=4):
+    # retrieve the link to the last page via the last page button
+    last_page = home_page.find("a", id="ContentPlaceHolder1_pagerPrograms_ctl00_PagingFieldForDataPager_lnkLast")
+    if not last_page:
+        raise ValueError("Could not find the link to the last page")
+
+    # parse the page number from the link to the last page 
+    link = last_page.get("href")
+    query = urlparse(link).query
+    page_number = int(parse_qs(query).get("p", [0])[0])
+    return page_number
+
+
+
+def parallel_extract(url, rel_path, total_pages=-1, chunk_size=5, processes=4):
+    """
+    Extract information from the webpages in parallel chunks.
+
+    :param url: the ODJFS URL for the childcare search results page.
+    :param rel_path: the relative path to childcare results
+    :param total_pages: if not provided, will process all pages available.
+    :param chunk_size: the number of pages processed at a time in a given process
+    :param processes: number of parallel processes
+    """
+
+    if total_pages < 0:
+        # last page is included (zero-indexed pages)
+        total_pages = get_last_page(url) + 1
+
+    print(f"Total pages {total_pages}")
+
+    chunk_size = 1
+    total_pages = 2
+
+    # last page is included
     ranges = [(url, rel_path, start, min(start + chunk_size - 1, total_pages))
               for start in range(0, total_pages, chunk_size)]
 
     print(f"Processing {total_pages} pages in {len(ranges)} chunks of size {chunk_size} with {processes} processes...")
 
-    with mp.Pool(processes) as pool:
+    with mp.Pool(max(processes, len(ranges))) as pool:
         results = pool.starmap(extract_all_centers, ranges)
 
     # Combine results
@@ -432,21 +470,37 @@ def download_pdf(pdf_url) -> BytesIO | None:
         print(f"Failed to download PDF: {response.status_code}")
         return None
 
-
-def load_ODJFS_data(odcy_link, rel_path, pdf_links_path="pdf_links.csv", nc_df_path="non_compliance.csv", num_jobs=1):
+def load_ODJFS_data(
+    folder="",
+    odcy_link=ODCY_LINK,
+    rel_path=REL_PATH,
+    pdf_links_filename="pdf_links.csv",
+    nc_df_filename="non_compliances.csv",
+    num_jobs=1
+):
     """
-    Checks if specified files already exist. If not, generates them using extract_all_centers,
-    saves them, and returns the corresponding DataFrames.
+    Load or create ODJFS center data and PDF links.
 
-    Args:
-        odcy_link (str): The link used to extract center data.
-        rel_path (str): The relative path used in the extraction process.
-        pdf_links_path (str): File path to save or load the pdf_links DataFrame.
-        nc_df_path (str): File path to save or load the non_compliance DataFrame.
+    This function checks whether the specified output files already exist within the given folder.
+    If not, it extracts the data and saves the files for reuse. Creates the folder if it does not exist.
 
-    Returns:
-        tuple: A tuple of two DataFrames (pdf_links, nc_df).
+    :param folder: Folder where output files will be stored.
+    :param odcy_link: URL to scrape center data from.
+    :param rel_path: Relative path for scraping logic.
+    :param pdf_links_filename: Filename for the PDF links CSV (inside the folder).
+    :param nc_df_filename: Filename for the non-compliances CSV (inside the folder).
+    :param num_jobs: Number of parallel jobs to use in data extraction.
+    :return: Tuple of paths (Path to PDF links CSV, Path to non-compliances CSV).
     """
+
+    # ensure folder exists
+    if folder:
+        folder_path = Path(folder)
+        folder_path.mkdir(parents=True, exist_ok=True)
+
+        # construct full paths to the CSVs
+        pdf_links_path = folder_path / pdf_links_filename
+        nc_df_path = folder_path / nc_df_filename
 
     if os.path.exists(pdf_links_path) and os.path.exists(nc_df_path):
         print("Loading existing data...")
@@ -457,7 +511,8 @@ def load_ODJFS_data(odcy_link, rel_path, pdf_links_path="pdf_links.csv", nc_df_p
     else:
         print("Webscraping Data (make sure the paths are valid)")
         if num_jobs > 1:
-            pdf_links, nc_df = parallel_extract(odcy_link, rel_path, total_pages=212, chunk_size=5, processes=num_jobs)
+            # formerly 212 pages. There are 416 at the time of writing...
+            pdf_links, nc_df = parallel_extract(odcy_link, rel_path, total_pages=-1, chunk_size=5, processes=num_jobs)
         else:
             pdf_links, nc_df = extract_all_centers(odcy_link, rel_path)
 
@@ -476,10 +531,10 @@ if __name__ == "__main__":
         parser.add_argument("nc_output",
                             help="Path to the output CSV file for the non-compliance DataFrame.")
 
-        parser.add_argument("--total_pages",
-                            type=int,
-                            default=212,
-                            help="Number of total pages to extract (default: 212).")
+        # parser.add_argument("--total_pages",
+        #                     type=int,
+        #                     default=212,
+        #                     help="Number of total pages to extract (default: 212).")
 
         parser.add_argument("--chunk_size",
                             type=int,
@@ -496,7 +551,7 @@ if __name__ == "__main__":
         pdf_links, nc_df = parallel_extract(
             ODCY_LINK,
             REL_PATH,
-            total_pages=args.total_pages,
+            # total_pages=args.total_pages,
             chunk_size=args.chunk_size,
             processes=args.num_workers
         )
