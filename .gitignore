@@ -6,3 +6,4 @@
 .direnv/
 __pycache__/
 *.json
+.idea/
