@@ -1,3 +1,8 @@
-venv/
+.venv/
+.venv_old/
 *.png
 *.csv
+.env
+.direnv/
+__pycache__/
+*.json
