@@ -5,7 +5,6 @@ import io
 import logging
 import numpy as np
 import pandas as pd
-import os
 import re
 import requests
 
@@ -20,7 +19,6 @@ from google.cloud.documentai_toolbox import gcs_utilities
 from pathlib import Path
 from PIL import Image
 from typing import Optional
-
 
 from webscraping import load_ODJFS_data
 from config import DOC_PROCESSOR_ID, PROJECT_ID, GCS_BUCKET
@@ -91,8 +89,7 @@ def download_and_upload_pdf(bucket, blob_name, pdf_url, page_count=1, dpi=300):
     :param blob_name: name of the PDF file (e.g., the PDF's ID)
     :param pdf_url: URL of the PDF file
     :param page_count: number of pages to download
-    :param dpi: resolution of the PDF
-
+    :param dpi: resolution of the PDF (300 by default. This works, so use unless major issues with pricing)
     """
     try:
         response = requests.get(pdf_url)
@@ -119,7 +116,7 @@ def download_and_upload_pdf(bucket, blob_name, pdf_url, page_count=1, dpi=300):
 
         logging.info(f"Uploaded {blob_name} to GCS.")
     except Exception as e:
-        logging.error(f"Failed to preprocess and upload {pdf_url} to GCS: {e}")
+        logging.error(f"Failed to download and upload {pdf_url} to GCS: {e}")
 
 
 def process_pdf_batch(bucket, gcs_prefix: str, pdf_links: pd.Series, num_pages):
@@ -138,7 +135,7 @@ def upload_files_to_gcs(bucket, gcs_prefix: str, pdf_links: pd.Series, batch_siz
 
     batches = [pdf_links[i:i + batch_size] for i in range(0, len(pdf_links), batch_size)]
 
-    # TODO: revisit with exponential backoff if issues with rate limits
+    # NOTE: Could revisit with exponential backoff if issues with rate limits (no issues with 8 threads)
     # uses threads since this is primarily an IO/network operation
     with ThreadPoolExecutor(max_workers=num_workers) as executor:
         futures = []
@@ -191,8 +188,7 @@ def process_ocr_batch(client: documentai.DocumentProcessorServiceClient, request
     
     # wait until the batch process is complete
     try:
-        if verbose:
-            logging.info(f"Waiting for operation {operation.operation.name} to complete...")
+        logging.info(f"Waiting for operation {operation.operation.name} to complete...")
         operation.result(timeout=timeout)
 
     # catch exception when operation doesn't finish before timeout
@@ -216,7 +212,7 @@ def process_ocr_batch(client: documentai.DocumentProcessorServiceClient, request
         # The Cloud Storage API requires the bucket name and URI prefix separately
         matches = re.match(r"gs://(.*?)/(.*)", process.output_gcs_destination)
         if not matches:
-            logging.warning(
+            logging.error(
                 "Could not parse output GCS destination:",
                 process.output_gcs_destination,
             )
@@ -233,7 +229,7 @@ def process_ocr_batch(client: documentai.DocumentProcessorServiceClient, request
         for blob in output_blobs:
             # Document AI should only output JSON files to GCS
             if blob.content_type != "application/json":
-                logging.warning(
+                logging.error(
                     f"Skipping non-supported file: {blob.name} - Mimetype: {blob.content_type}"
                 )
                 continue
@@ -242,8 +238,8 @@ def process_ocr_batch(client: documentai.DocumentProcessorServiceClient, request
                 doc_ID = blob.name.split("/")[-1].split(".")[0].split("-")[0]
 
             # download JSON File as bytes object and convert to Document Object
-            if verbose:
-                logging.info(f"Fetching {blob.name}")
+            logging.info(f"Fetching {blob.name}")
+
             document = documentai.Document.from_json(
                 blob.download_as_bytes(), ignore_unknown_fields=True
             )
@@ -298,8 +294,7 @@ def extract_from_pdfs(
 
     proc_name = client.processor_path(PROJECT_ID, location="us", processor=DOC_PROCESSOR_ID)
 
-    if verbose:
-        logging.info(f"{len(batches)} batch(es) created.")
+    logging.info(f"{len(batches)} batch(es) created.")
     
     processed_docs = [] 
 
@@ -353,27 +348,9 @@ def main(args):
 
 if __name__ == '__main__':
 
-    import logging
-
-    log_dir = Path("logs")
-    log_dir.mkdir(parents=True, exist_ok=True)
-
-    # log file with timestamp
-    log_file = log_dir / f"run_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.log"
-
-
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(message)s",
-        handlers=[
-            logging.FileHandler("output.log"),
-            logging.StreamHandler()
-        ],
-    )
-
     parser = argparse.ArgumentParser(description="Extract licensing data from the ODJFS website and licensing PDFs.")
     # parser.add_argument("output_folder", help="Path to the folder that will contain the output CSV file for program center info, pdf links, and non-compliances.")
-    parser.add_argument("--output_folder", default="output/test2")
+    parser.add_argument("--output_folder", default="output/2024-2025")
     parser.add_argument("--num_jobs", 
                         type=int, 
                         help="Number of jobs to run in parallel.",
@@ -382,12 +359,27 @@ if __name__ == '__main__':
     parser.add_argument("--batch_size",
                         type=int,
                         help="Number of PDFS to process in a chunk. Default is 50.",
-                        default=5)
+                        default=50)
     parser.add_argument("--gcs_prefix", 
                         type=str, 
                         help="Folder path to store the pdfs in Google Cloud. Default = 'input'",
-                        default="test")
-    parser.add_argument("--verbose", action="store_true", help="Enable verbose logging.")
+                        default="input")
+    parser.add_argument("--verbose", action="store_true", help="Enable verbose logging (includes sucesses and progress updates as well as failures).")
     args = parser.parse_args()
+
+    log_dir = Path("logs")
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    # log file with timestamp
+    log_file = log_dir / f"run_{datetime.now().strftime('%Y-%m-%d')}.log"
+
+    logging.basicConfig(
+        level=logging.INFO if args.verbose else logging.WARNING,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        handlers=[
+            logging.FileHandler(log_file),
+            logging.StreamHandler()
+        ],
+    )
 
     main(args)

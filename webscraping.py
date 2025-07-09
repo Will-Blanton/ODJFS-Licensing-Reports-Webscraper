@@ -1,5 +1,6 @@
 import argparse
 import os
+import logging
 import multiprocessing as mp
 import pandas as pd
 import re
@@ -46,7 +47,7 @@ def extract_html(url):
         return soup
     else:
 
-        print(f"Failed to retrieve page from {url}, status code: {response.status_code}")
+        logging.error(f"Failed to retrieve page from {url}, status code: {response.status_code}")
         return None
 
 
@@ -222,8 +223,8 @@ def extract_non_compliance(nc_link, rel_path) -> pd.DataFrame:
         nc_df['occurrence'] = nc_df.groupby(by="rule").cumcount()
 
     except Exception as e:
-        print(f"Error in extract_non_compliance: {e}")
-        print(f"Link: {nc_link}")
+        logging.error(f"Error in extract_non_compliance: {e}")
+        logging.error(f"Link: {nc_link}")
         nc_df = None
 
     return nc_df
@@ -275,7 +276,7 @@ def extract_all_non_compliances(nc_link: str, rel_path: str) -> pd.DataFrame:
 
                     nc_df = pd.concat(all_dfs, axis=0, ignore_index=True)
     except Exception as e:
-        print(f"Error in extract_all_non_compliances: {e}")
+        logging.error(f"Error in extract_all_non_compliances: {e}")
     finally:
         return nc_df
 
@@ -318,7 +319,7 @@ def extract_all_centers(url, rel_path, start_page=0, end_page=-1) -> (pd.DataFra
             # get the current page of results
             page_link = f"{url}&p={page_num}"
 
-            print(f"Processing page {page_link}...")
+            # logging.info(f"Processing page {page_link}...")
             main_page = extract_html(page_link)
 
             if main_page is not None:
@@ -369,8 +370,8 @@ def extract_all_centers(url, rel_path, start_page=0, end_page=-1) -> (pd.DataFra
                         # save the current row  information
                         pdf_urls.append(program_df)
                 except Exception as e:
-                    print(f"Error in page {page_num}: {e}")
-                    print(f"Link: {page_link}")
+                    logging.error(f"Error in page {page_num}: {e}")
+                    logging.error(f"Link: {page_link}")
 
                 # TODO: remove this debug code
                 # use for debugging to limit the number of pages to scrape
@@ -390,9 +391,9 @@ def extract_all_centers(url, rel_path, start_page=0, end_page=-1) -> (pd.DataFra
         url_df.set_index(PROGRAM_ID, inplace=True)
     else:
         if not pdf_urls:
-            print(f"No PDF URLs extracted for pages {start_page}-{end_page}")
+            logging.error(f"No PDF URLs extracted for pages {start_page}-{end_page}")
         if not non_compliance_dfs:
-            print(f"No non-compliance data extracted for pages {start_page}-{end_page}")
+            logging.error(f"No non-compliance data extracted for pages {start_page}-{end_page}")
 
         url_df = pd.DataFrame()
         nc_df = pd.DataFrame()
@@ -431,16 +432,13 @@ def parallel_extract(url, rel_path, total_pages=-1, chunk_size=5, processes=4):
         # last page is included (zero-indexed pages)
         total_pages = get_last_page(url) + 1
 
-    print(f"Total pages {total_pages}")
-
-    chunk_size = 1
-    total_pages = 2
+    logging.info(f"Total pages {total_pages}")
 
     # last page is included
     ranges = [(url, rel_path, start, min(start + chunk_size - 1, total_pages))
               for start in range(0, total_pages, chunk_size)]
 
-    print(f"Processing {total_pages} pages in {len(ranges)} chunks of size {chunk_size} with {processes} processes...")
+    logging.info(f"Processing {total_pages} pages in {len(ranges)} chunks of size {chunk_size} with {processes} processes...")
 
     with mp.Pool(max(processes, len(ranges))) as pool:
         results = pool.starmap(extract_all_centers, ranges)
@@ -467,7 +465,7 @@ def download_pdf(pdf_url) -> BytesIO | None:
     if response.status_code == 200:
         return BytesIO(response.content)
     else:
-        print(f"Failed to download PDF: {response.status_code}")
+        logging.error(f"Failed to download PDF: {response.status_code}")
         return None
 
 def load_ODJFS_data(
@@ -503,13 +501,14 @@ def load_ODJFS_data(
         nc_df_path = folder_path / nc_df_filename
 
     if os.path.exists(pdf_links_path) and os.path.exists(nc_df_path):
-        print("Loading existing data...")
+        logging.info("Loading existing data...")
         pdf_links = pd.read_csv(pdf_links_path, index_col=0)
         nc_df = pd.read_csv(nc_df_path)
         nc_df.reset_index(inplace=True, drop=True)
         nc_df.set_index(["program_id", "rule", "occurrence"], inplace=True)
     else:
-        print("Webscraping Data (make sure the paths are valid)")
+        logging.info("Webscraping Data (make sure the paths are valid)")
+
         if num_jobs > 1:
             # formerly 212 pages. There are 416 at the time of writing...
             pdf_links, nc_df = parallel_extract(odcy_link, rel_path, total_pages=-1, chunk_size=5, processes=num_jobs)
@@ -523,43 +522,55 @@ def load_ODJFS_data(
 
 
 if __name__ == "__main__":
-    if __name__ == "__main__":
-        parser = argparse.ArgumentParser(description="Script to extract PDF links and non-compliance data.")
-        parser.add_argument("pdf_links_output",
-                            help="Path to the output CSV file for extracted PDF links.")
 
-        parser.add_argument("nc_output",
-                            help="Path to the output CSV file for the non-compliance DataFrame.")
+    parser = argparse.ArgumentParser(description="Script to extract PDF links and non-compliance data.")
+    parser.add_argument("pdf_links_output",
+                        help="Path to the output CSV file for extracted PDF links.")
 
-        # parser.add_argument("--total_pages",
-        #                     type=int,
-        #                     default=212,
-        #                     help="Number of total pages to extract (default: 212).")
+    parser.add_argument("nc_output",
+                        help="Path to the output CSV file for the non-compliance DataFrame.")
 
-        parser.add_argument("--chunk_size",
-                            type=int,
-                            default=10,
-                            help="Number of pages to handle in each extraction chunk (default: 10).")
+    parser.add_argument("--chunk_size",
+                        type=int,
+                        default=10,
+                        help="Number of pages to handle in each extraction chunk (default: 10).")
 
-        parser.add_argument("--num_workers",
-                            type=int,
-                            default=1,
-                            help="Number of parallel worker processes. For context, 10 workers takes about 40-50 minutes to create the entire dataset. (default: 1).")
+    parser.add_argument("--num_workers",
+                        type=int,
+                        default=1,
+                        help="Number of parallel worker processes. For context, 10 workers takes about 40-50 minutes to create the entire dataset. (default: 1).")
 
-        args = parser.parse_args()
+    parser.add_argument("--verbose", action="store_true", help="Enable verbose logging (includes sucesses and progress updates as well as failures).")
 
-        pdf_links, nc_df = parallel_extract(
-            ODCY_LINK,
-            REL_PATH,
-            # total_pages=args.total_pages,
-            chunk_size=args.chunk_size,
-            processes=args.num_workers
-        )
+    args = parser.parse_args()
+    
+    log_dir = Path("logs")
+    log_dir.mkdir(parents=True, exist_ok=True)
 
-        pdf_links.to_csv(args.pdf_links_output, index=True)
-        nc_df.to_csv(args.nc_output, index=True)
+    # log file with timestamp
+    log_file = log_dir / f"run_{datetime.now().strftime('%Y-%m-%d')}.log"
 
-        print(f"Total inspection reports: {len(pdf_links)}")
+    logging.basicConfig(
+        level=logging.INFO if args.verbose else logging.WARNING,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        handlers=[
+            logging.FileHandler(log_file),
+            logging.StreamHandler()
+        ],
+    )
 
-        pdf_links = pdf_links[pdf_links['pdf'].str.contains("ANNUAL")]
-        print(f"Found {len(pdf_links)} annual inspection reports.")
+    pdf_links, nc_df = parallel_extract(
+        ODCY_LINK,
+        REL_PATH,
+        # total_pages=args.total_pages,
+        chunk_size=args.chunk_size,
+        processes=args.num_workers
+    )
+
+    pdf_links.to_csv(args.pdf_links_output, index=True)
+    nc_df.to_csv(args.nc_output, index=True)
+
+    logging.info(f"Total inspection reports: {len(pdf_links)}")
+
+    pdf_links = pdf_links[pdf_links['pdf'].str.contains("ANNUAL")]
+    logging.info(f"Found {len(pdf_links)} annual inspection reports.")
