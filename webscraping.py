@@ -488,7 +488,7 @@ def load_ODJFS_data(
     :param pdf_links_filename: Filename for the PDF links CSV (inside the folder).
     :param nc_df_filename: Filename for the non-compliances CSV (inside the folder).
     :param num_jobs: Number of parallel jobs to use in data extraction.
-    :return: Tuple of paths (Path to PDF links CSV, Path to non-compliances CSV).
+    :return: dataframe containing links to licensing PDFs
     """
 
     # ensure folder exists
@@ -500,12 +500,9 @@ def load_ODJFS_data(
         pdf_links_path = folder_path / pdf_links_filename
         nc_df_path = folder_path / nc_df_filename
 
-    if os.path.exists(pdf_links_path) and os.path.exists(nc_df_path):
+    if os.path.exists(pdf_links_path):
         logging.info("Loading existing data...")
         pdf_links = pd.read_csv(pdf_links_path, index_col=0)
-        nc_df = pd.read_csv(nc_df_path)
-        nc_df.reset_index(inplace=True, drop=True)
-        nc_df.set_index(["program_id", "rule", "occurrence"], inplace=True)
     else:
         logging.info("Webscraping Data (make sure the paths are valid)")
 
@@ -518,7 +515,7 @@ def load_ODJFS_data(
         pdf_links.to_csv(pdf_links_path, index=True)
         nc_df.to_csv(nc_df_path, index=True)
 
-    return pdf_links, nc_df
+    return pdf_links
 
 
 if __name__ == "__main__":

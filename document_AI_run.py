@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 import re
 import requests
+import time
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
@@ -81,6 +82,24 @@ def preprocess_image(pix: fitz.Pixmap, sharpen: bool = True) -> Image.Image:
     return Image.fromarray(rgb)
 
 
+def safe_download(url, retries=2, delay=2):
+    """
+    Download file from url.
+
+    If the download fails, retry.
+    """
+    for attempt in range(retries + 1):
+        try:
+            response = requests.get(url)
+            response.raise_for_status()
+            return response
+        except Exception as e:
+            if attempt < retries:
+                time.sleep(delay * (attempt + 1))
+            else:
+                raise
+
+
 def download_and_upload_pdf(bucket, blob_name, pdf_url, page_count=1, dpi=300):
     """
     Download a PDF from a URL and upload it to GCS for processing.
@@ -91,32 +110,39 @@ def download_and_upload_pdf(bucket, blob_name, pdf_url, page_count=1, dpi=300):
     :param page_count: number of pages to download
     :param dpi: resolution of the PDF (300 by default. This works, so use unless major issues with pricing)
     """
+
+    input_pdf = None
+
     try:
-        response = requests.get(pdf_url)
-        response.raise_for_status()
+        response = safe_download(pdf_url)
         pdf_content = response.content
 
         # retrieve the first page_count pages
         input_pdf = fitz.open(stream=pdf_content, filetype='pdf')
-
-        # extract the first page(s) and preprocess for field extraction/OCR
-        images = []
-        for page_num in range(min(page_count, len(input_pdf))):
-            pix = input_pdf[page_num].get_pixmap(dpi=dpi)
-            img = preprocess_image(pix, sharpen=True)
-            images.append(img)
-
-        pdf_buffer = io.BytesIO()
-        images[0].save(pdf_buffer, format="PDF", save_all=True, append_images=images[1:])
-        pdf_buffer.seek(0)
-
-        # upload to GCS
-        blob = bucket.blob(blob_name)
-        blob.upload_from_file(pdf_buffer, content_type='application/pdf')
-
-        logging.info(f"Uploaded {blob_name} to GCS.")
+    
     except Exception as e:
-        logging.error(f"Failed to download and upload {pdf_url} to GCS: {e}")
+        logging.error(f"Failed to download {pdf_url}: {e}")
+
+    if input_pdf:
+        try: 
+            # extract the first page(s) and preprocess for field extraction/OCR
+            images = []
+            for page_num in range(min(page_count, len(input_pdf))):
+                pix = input_pdf[page_num].get_pixmap(dpi=dpi)
+                img = preprocess_image(pix, sharpen=True)
+                images.append(img)
+
+            pdf_buffer = io.BytesIO()
+            images[0].save(pdf_buffer, format="PDF", save_all=True, append_images=images[1:])
+            pdf_buffer.seek(0)
+
+            # upload to GCS
+            blob = bucket.blob(blob_name)
+            blob.upload_from_file(pdf_buffer, content_type='application/pdf')
+
+            logging.info(f"Uploaded {blob_name} to GCS.")
+        except Exception as e:
+            logging.error(f"Failed to upload {pdf_url} to GCS: {e}")
 
 
 def process_pdf_batch(bucket, gcs_prefix: str, pdf_links: pd.Series, num_pages):
@@ -317,22 +343,28 @@ def main(args):
     # links = pd.read_csv("output/2024-2025/pdf_links.csv", index_col=0).iloc[0]
 
     # webscrape the links or load from an existing file (don't need the rules)
-    links, _ = load_ODJFS_data(
+    links = load_ODJFS_data(
         folder=args.output_folder,
-        num_jobs=args.num_jobs
+        num_jobs=args.num_jobs,
+        pdf_links_filename=args.pdf_link_file
     )
 
     logging.info(f"Bucket name: {GCS_BUCKET}")
 
     # upload the pdfs to gcs before processing
     bucket = create_gcs_bucket(GCS_BUCKET)
-    upload_files_to_gcs(bucket, args.gcs_prefix, links['pdf'], args.batch_size, args.num_jobs)
+    upload_files_to_gcs(
+        bucket, 
+        args.gcs_prefix,
+        links['pdf'],
+        args.gcs_batch_size, args.num_jobs
+    )
 
     # Perform OCR on the pdfs
     processed = extract_from_pdfs(
             gcs_bucket_name=GCS_BUCKET,
             gcs_prefix=args.gcs_prefix,
-            batch_size=args.batch_size,
+            batch_size=args.ocr_batch_size,
             field_mask="entities", # only extract entities/fields
             threads=args.num_jobs,
             timeout=900
@@ -349,16 +381,20 @@ def main(args):
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description="Extract licensing data from the ODJFS website and licensing PDFs.")
-    # parser.add_argument("output_folder", help="Path to the folder that will contain the output CSV file for program center info, pdf links, and non-compliances.")
-    parser.add_argument("--output_folder", default="output/2024-2025")
+    parser.add_argument("output_folder", help="Path to the folder that will contain the output CSV file for program center info, pdf links, and non-compliances.")
+    parser.add_argument("--pdf_link_file", default="pdf_links.csv")
     parser.add_argument("--num_jobs", 
                         type=int, 
-                        help="Number of jobs to run in parallel.",
-                        default=8
+                        help="Number of jobs to run in parallel. For some functions, the number will be capped to 5 to avoid API limits.",
+                        default=5
                         )
-    parser.add_argument("--batch_size",
+    parser.add_argument("--gcs_batch_size",
                         type=int,
-                        help="Number of PDFS to process in a chunk. Default is 50.",
+                        help="Number of PDFS to upload to GCS per thread. Default: 30",
+                        default=30)
+    parser.add_argument("--ocr_batch_size",
+                        type=int,
+                        help="Number of PDFs in an OCR batch. Default: 50",
                         default=50)
     parser.add_argument("--gcs_prefix", 
                         type=str, 
@@ -371,7 +407,7 @@ if __name__ == '__main__':
     log_dir.mkdir(parents=True, exist_ok=True)
 
     # log file with timestamp
-    log_file = log_dir / f"run_{datetime.now().strftime('%Y-%m-%d')}.log"
+    log_file = log_dir / f"{datetime.now().strftime('%Y-%m-%d')}.log"
 
     logging.basicConfig(
         level=logging.INFO if args.verbose else logging.WARNING,
