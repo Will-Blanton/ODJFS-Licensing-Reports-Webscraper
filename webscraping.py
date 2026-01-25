@@ -51,29 +51,59 @@ def extract_html(url):
         return None
 
 
-def extract_inspection(url, rel_path):
+def extract_inspection(program_page, rel_path):
     """
     Extract the inspection link from the childcare center page
 
-    :param url: the child care center page
+    :param program_page: the child care center page's html
     :param rel_path: relative path to append to the inspection link
     :return: the inspection page link
     """
     inspection_url = None
 
-    # get the html for the program page
-    program_page = extract_html(url)
+    inspection_button_span = program_page.find('span', class_='inspectionsButton')
 
-    if program_page:
-        inspection_button_span = program_page.find('span', class_='inspectionsButton')
+    if inspection_button_span:
+        inspection_link_tag = inspection_button_span.find_parent('a')
 
-        if inspection_button_span:
-            inspection_link_tag = inspection_button_span.find_parent('a')
-
-            if inspection_link_tag and 'href' in inspection_link_tag.attrs:
-                inspection_url = rel_path + inspection_link_tag['href']
+        if inspection_link_tag and 'href' in inspection_link_tag.attrs:
+            inspection_url = rel_path + inspection_link_tag['href']
 
     return inspection_url
+
+
+def extract_accreditations(program_page) -> dict[str, bool]:
+    """
+    Extract the center's accreditations (e.g., NAEYC, NECPA) 
+
+    :param program_page: the child care center page's html
+    :return: a dictionary with each accreditation as the key and True or False to indicate presence as the value
+    """
+
+    accreditations = {
+        "NAEYC": False,
+        "NECPA": False,
+        "NACCP": False,
+        "NAFCC": False
+    }
+
+    spans = program_page.find_all("span", class_="checkBoxIcon green")
+
+    pattern = re.compile(r"schk(.*?)_checkBox")
+
+    for span in spans:
+        span_id = span.get("id", "")
+        match = pattern.search(span_id)
+        if match:
+            extracted_item = match.group(1)
+
+            if extracted_item in accreditations:
+
+                accreditations[extracted_item] = True
+
+    # acr_df = pd.DataFrame(accreditations, [program_name])
+
+    return accreditations
 
 
 def extract_center_links(url, rel_path) -> (str, str):
@@ -340,28 +370,40 @@ def extract_all_centers(url, rel_path, start_page=0, end_page=-1) -> (pd.DataFra
                             if program_link_tag:
                                 program_name = program_link_tag.text.strip()
                                 program_url = rel_path + program_link_tag['href']
-                                inspection_url = extract_inspection(program_url, rel_path)
-                                program_pdf_link, nc_link = extract_center_links(inspection_url, rel_path) if inspection_url is not None else None
+                            
+                                # get the html for the program page
+                                program_page = extract_html(program_url)
 
-                                # only save the pdf link if it is an annual inspection
-                                if program_pdf_link is not None:
+                                if program_page:
 
-                                    program_ID = re.search(r"pdf/(\d+)_", program_pdf_link).group(1)
+                                    # extract info from the childcare center page
+                                    inspection_url = extract_inspection(program_page, rel_path)
+                                    accreditations = extract_accreditations(program_page)
+                                    program_pdf_link, nc_link = extract_center_links(inspection_url, rel_path) if inspection_url is not None else None
 
-                                    program_df[PROGRAM_ID] = [program_ID]
-                                    program_df[PROGRAM_NAME] = [program_name]
-                                    program_df['pdf'] = [program_pdf_link]
+                                    # only save the pdf link if it is an annual inspection
+                                    if program_pdf_link is not None:
 
-                                    if nc_link is not None:
-                                        rule_df = extract_all_non_compliances(nc_link, rel_path)
-                                        rule_df[PROGRAM_ID] = program_ID
-                                        rule_df[PROGRAM_NAME] = program_name
-                                        rule_df['nc_link'] = nc_link
-                                        non_compliance_dfs.append(rule_df)
-                                else:
-                                    continue
+                                        program_ID = re.search(r"pdf/(\d+)_", program_pdf_link).group(1)
 
-                        address_columns = row.findAll("div", class_="resultsListColumn")
+                                        program_df[PROGRAM_ID] = [program_ID]
+                                        program_df[PROGRAM_NAME] = [program_name]
+                                        program_df['pdf'] = [program_pdf_link]
+
+                                        # add the accrediations as columns
+                                        for k, v in accreditations.items():
+                                            program_df[k] = [v]
+
+                                        if nc_link is not None:
+                                            rule_df = extract_all_non_compliances(nc_link, rel_path)
+                                            rule_df[PROGRAM_ID] = program_ID
+                                            rule_df[PROGRAM_NAME] = program_name
+                                            rule_df['nc_link'] = nc_link
+                                            non_compliance_dfs.append(rule_df)
+                                    else:
+                                        continue
+
+                        address_columns = row.find_all("div", class_="resultsListColumn")
                         if address_columns:
                             program_df['Address'] = [address_columns[1].get_text(strip=True)]
                             program_df['City'] = [address_columns[2].get_text(strip=True)]
@@ -400,6 +442,7 @@ def extract_all_centers(url, rel_path, start_page=0, end_page=-1) -> (pd.DataFra
 
     # return with the program name as the index
     return url_df, nc_df
+
 
 def get_last_page(url):
     home_page = extract_html(url)
